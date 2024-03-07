@@ -117,6 +117,9 @@ sz_psz2u(size_t psz) {
 	return usize;
 }
 
+/*
+ * HIGHLIGHT: 不依赖任何查找表，直接在runtime时通过size计算出size classes的下标
+ */
 static inline szind_t
 sz_size2index_compute(size_t size) {
 	if (unlikely(size > SC_LARGE_MAXCLASS)) {
@@ -134,15 +137,28 @@ sz_size2index_compute(size_t size) {
 	}
 #endif
 	{
+		//HIGHLIGHT: x 是 size所属group的lg_base+1
+		//HIGHLIGHT: x-1 为size所属group的lg_base
 		szind_t x = lg_floor((size<<1)-1);
+
+		// HIGHLIGHT: 这里的 shift 含义是相对于 pseudo group 的 第几组
+		// HIGHLIGHT: 为什么减去 SC_LG_NGROUP + LG_QUANTUM， 因为第一个regular group 的 lg_base 是 SC_LG_NGROUP + LG_QUANTUM.
+		// HIGHLIGHT： 计算到第一个regular group的距离，本来应该是 x - (SC_LG_NGROUP + LG_QUANTUM) - 1，但是因为这里计算的是相对于pseudo group的距离，所以所有需要+1，于是最终表达式为 x - (SC_LG_NGROUP + LG_QUANTUM)
 		szind_t shift = (x < SC_LG_NGROUP + LG_QUANTUM) ? 0 :
 		    x - (SC_LG_NGROUP + LG_QUANTUM);
+
+		// HIGHLIGHT: grp 代表group开始的第一个 size class 所在的下标
 		szind_t grp = shift << SC_LG_NGROUP;
 
+		// HIGHLIGHT: lg_delta 用于确定所在group的 lg_delta. x-1是所在的组的lg_base， 按照size公式 1<<lg_base + ndelta << lg_delta
+		// HIGHLIGHT: x - SC_LG_NGROUP - 1 计算的是x - 1 SC_LG_NGROUP 即 lg_delta = lg_base - SC_LG_NGROUP
 		szind_t lg_delta = (x < SC_LG_NGROUP + LG_QUANTUM + 1)
 		    ? LG_QUANTUM : x - SC_LG_NGROUP - 1;
 
 		size_t delta_inverse_mask = ZU(-1) << lg_delta;
+		// HIGHLIGHT: mod 代表的是在这个 group 中第几个位置
+		// HIGHLIGHT: size class = lg_base + n*(1<<lg_base-SC_LG_NGROUP) = (SC_NGROUP+n)* (1<<lg_delta)
+		// HIGHLIGHT: 故而为了求 n 需要先将 (SC_NGROUP+n) 这部分求出来， 然后求mod，因为SC_NGROUP一定为2的次方，所有mod操作等价 & ((1 << SC_LG_NGROUP) -
 		szind_t mod = ((((size-1) & delta_inverse_mask) >> lg_delta)) &
 		    ((ZU(1) << SC_LG_NGROUP) - 1);
 
@@ -168,6 +184,7 @@ sz_size2index(size_t size) {
 	return sz_size2index_compute(size);
 }
 
+// HIGHLIGHT: runtime并不用这个函数，只在asset中debug用的
 static inline size_t
 sz_index2size_compute(szind_t index) {
 #if (SC_NTINY > 0)

@@ -80,6 +80,9 @@ ffs_u32(uint32_t bitmap) {
 	return ffs_u(bitmap);
 }
 
+/*
+ * HIGHLIGHT: bsrq 指令的功能是从源操作数的最高位开始找第一个为1的bit，将bit位置输出到目标操作数中
+ */
 BIT_UTIL_INLINE uint64_t
 pow2_ceil_u64(uint64_t x) {
 #if (defined(__amd64__) || defined(__x86_64__) || defined(JEMALLOC_HAVE_BUILTIN_CLZ))
@@ -148,7 +151,9 @@ pow2_ceil_zu(size_t x) {
 	return pow2_ceil_u32(x);
 #endif
 }
-
+/*
+ * HIGHLIGHT: 对于源操作数，从高位到低位搜索，将遇到的第一个1所在的位置输出到目标操作数中
+ */
 #if (defined(__i386__) || defined(__amd64__) || defined(__x86_64__))
 BIT_UTIL_INLINE unsigned
 lg_floor(size_t x) {

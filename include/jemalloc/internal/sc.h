@@ -139,6 +139,7 @@
  * lg_delta, and ndelta (i.e. number of deltas above the base) on a
  * per-size-class basis, and maintain the invariant that, across all size
  * classes, size == (1 << lg_base) + ndelta * (1 << lg_delta).
+ * HIGHLIGHT: size == (1 << lg_base) + ndelta * (1 << lg_delta)
  *
  * For regular groups (i.e. those with lg_base >= LG_QUANTUM + SC_LG_NGROUP),
  * lg_delta is lg_base - SC_LG_NGROUP, and ndelta goes from 1 to SC_NGROUP.
@@ -146,6 +147,8 @@
  * For the initial tiny size classes (if any), lg_base is lg(size class size).
  * lg_delta is lg_base for the first size class, and lg_base - 1 for all
  * subsequent ones. ndelta is always 0.
+ * HIGHLIGHT: 这里怎么理解呢， ndelta都为0了，为什么lg_delta还要区分第一个为 lg_base， 剩下的为 lg_base - 1，感觉没有意义。
+ * HIGHLIGHT: 代码实现中确实是按照上面的逻辑实现的, 我认为是为了后面Pseudo group 的计算而加的这个逻辑
  *
  * For the pseudo-group, if there are no tiny size classes, then we set
  * lg_base == LG_QUANTUM, lg_delta == LG_QUANTUM, and have ndelta range from 0
@@ -164,6 +167,51 @@
  * "Large" size classes are those that are not small. The cutoff for counting as
  * large is page size * group size.
  */
+
+/* 
+HIGHLIGHT: 总结如下
+ 总的目标是要让(下一个size class的size - 上一个size class的size) = (1 << 当前的 size class 对应的 lg_delta)
+ Regular group (SC_NGROUP * (SC_PTR_BITS-2-LG_QUANTUM-2+1) - 1)
+   正常的组里面会有 SC_NGROUP 个 size (1<<lg_base + ndelta << (lg_delta)] where ndelta is [1, SC_NGROUP], lg_delta=lg_base-2
+   这样 Regular group 中每个组中有 SC_NGROUP 个 size class，在 Regular group 中的所有 size class 永远是严格单调递增的，并且每个相邻的 size class的差值为 1<<lg_delta
+   lg_base的上下界
+     1. 为了让 Regular group 中的内存都能够按照 1<<LG_QUANTUM 对齐, 所以最小的 lg_delta 需要等于 LG_QUANTUM。于是最小的 lg_base = LG_QUANTUM+2
+     2. size 最大值应该小于 2 ** (ptr_bits - 1) 所以最后一个组的 base 为 2 ** (ptr_bits - 2) 并且最后一个组中比其他正常组要少1个size class。于是最大的 lg_base = SC_PTR_BITS-2
+ Tiny size classes (LG_QUANTUM-SC_LG_TINY_MIN):
+   为了定义一些小内存我们使用 SC_LG_TINY_MIN 来定义支持的最小的内存 size
+   这个组中会包含 LG_QUANTUM - SC_LG_TINY_MIN 个 size class
+   在这个组中肯定没法保证size是按照 1<<LG_QUANTUM 对齐的
+   size分别为：
+     1 << SC_LG_TINY_MIN
+     1 << (SC_LG_TINY_MIN + 1)
+     1 << (SC_LG_TINY_MIN + 2)
+     ...
+     1 << (LG_QUANTUM - 1)
+   统一到常规组的size计算公式: (1<<lg_base + (ndelta << lg_delta), ndelta永远等于0，所以lg_delta的值无意义
+     lg_base=SC_LG_TINY_MIN     ndelta=0
+     lg_base=SC_LG_TINY_MIN+1   ndelta=0
+     lg_base=SC_LG_TINY_MIN+2   ndelta=0
+     ...
+     lg_base=SC_LG_TINY_MIN+LG_QUANTUM-1
+ Pseudo group (SC_NGROUP):
+   因为 Regular group 中最小的 size 是 1<<(LG_QUANTUM + 2) + (1 << LG_QUANTUM) 和 Tiny size classes 的最大值 1 << (LG_QUANTUM - 1) 之间的差距可以容纳很多 1<<LG_QUANTUM
+   但是如果严格要求 lg_base = lg_delta+2, 那么中间这部分就没法定义了
+   所以如果我们要保证中间的这部分 size 依然按照 1<<LG_QUANTUM 对齐，那么就不能严格要求 lg_base = lg_delta+2
+   size分别为:
+     1 * 1<<LG_QUANTUM
+     2 * 1<<LG_QUANTUM
+     3 * 1<<LG_QUANTUM
+     ...
+     SC_NGROUP * 1<<LG_QUANTUM
+   统一到常规组的size计算公式: (1<<lg_base + (ndelta << lg_delta)
+     (1<<lg_base) + (ndelta << lg_delta) 
+     如果没有 tiny class
+       lg_base=LG_QUANTUM, lg_delta=LG_QUANTUM, ndelta in [0,1,2,3]
+     如果有 tiny class
+       第一个 size class : lg_base=LG_QUANTUM-1, lg_delta=LG_QUANTUM-1, ndelta = 1
+       剩余 SC_NGROUP-1 个 size class: lg_base=LG_QUANTUM, lg_delta=LG_QUANTUM, ndelta = [1,2,3]
+*/
+
 
 /*
  * Size class N + (1 << SC_LG_NGROUP) twice the size of size class N.
@@ -196,6 +244,7 @@
 #define SC_NREGULAR (SC_NGROUP * 					\
     (SC_LG_BASE_MAX - SC_LG_FIRST_REGULAR_BASE + 1) - 1)
 #define SC_NSIZES (SC_NTINY + SC_NPSEUDO + SC_NREGULAR)
+// HIGHLIGHT: SC_NSIZES value is 232 in 64-bits platform
 
 /* The number of size classes that are a multiple of the page size. */
 #define SC_NPSIZES (							\
@@ -278,9 +327,10 @@ struct sc_s {
 	 * True if the size class is a multiple of the page size, false
 	 * otherwise.
 	 */
-	bool psz;
+	bool psz; // HIGHLIGHT: 如果计算出来的size能整除 page size 就用 size / page size 来存储, 这个值在会用到
 	/*
 	 * True if the size class is a small, bin, size class. False otherwise.
+	 * HIGHLIGHT: size  < page * SC_NGROUP 的为true
 	 */
 	bool bin;
 	/* The slab page count if a small bin size class, 0 otherwise. */

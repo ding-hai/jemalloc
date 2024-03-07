@@ -72,6 +72,7 @@ size_class(
 	}
 	if (size < (ZU(1) << (lg_page + lg_ngroup))) {
 		sc->bin = true;
+                // HIGHLIGHT: slab_size 计算的是这个 size class 的 size 和 page的最小公倍数 然后这个最小公倍数除以page
 		sc->pgs = slab_size(lg_page, lg_base, lg_delta, ndelta);
 	} else {
 		sc->bin = false;
