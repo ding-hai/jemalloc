@@ -13,7 +13,7 @@
  * at least the damage is compartmentalized to this file.
  */
 
-sc_data_t sc_data_global;
+sc_data_t sc_data_global; // 似乎是无用的变量
 
 static size_t
 reg_size_compute(int lg_base, int lg_delta, int ndelta) {

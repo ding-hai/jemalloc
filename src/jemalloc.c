@@ -1491,6 +1491,7 @@ malloc_init_hard_a0_locked() {
 	 * before sz_boot and bin_boot, which assume that the values they read
 	 * out of sc_data_global are final.
 	 */
+	// HIGHLIGHT: 初始化size classes 及相关字段
 	sc_boot(&sc_data);
 	unsigned bin_shard_sizes[SC_NBINS];
 	bin_shard_sizes_boot(bin_shard_sizes);
@@ -1502,8 +1503,11 @@ malloc_init_hard_a0_locked() {
 	if (config_prof) {
 		prof_boot0();
 	}
+	// HIGHLIGHT: 解析conf
 	malloc_conf_init(&sc_data, bin_shard_sizes);
+	// HIGHLIGHT: 初始化 size class 相关的查找表
 	sz_boot(&sc_data);
+	// HIGHLIGHT: 初始化 全局 bin_infos
 	bin_boot(&sc_data, bin_shard_sizes);
 
 	if (opt_stats_print) {

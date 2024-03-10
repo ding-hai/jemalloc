@@ -597,6 +597,7 @@ label_error:
 
 bool
 pages_boot(void) {
+	// HIGHLIGHT: 获取page size
 	os_page = os_page_detect();
 	if (os_page > PAGE) {
 		malloc_write("<jemalloc>: Unsupported system page size\n");
